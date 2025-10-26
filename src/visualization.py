@@ -1,19 +1,20 @@
 """
 Visualization utilities for model evaluation outputs.
 
-Currently provides helper routines to create scatter plots comparing
-ground-truth values to predicted values and annotate the coefficient
-of determination (R²).  The functions operate with Matplotlib in
-non-interactive (Agg) mode so they can be used in headless training
-and inference environments.
+Provides helper routines to create scatter plots comparing ground-truth
+values to predictions, time-series overlays, and aggregate metric
+visualisations.  Everything operates with Matplotlib in Agg mode so the
+functions can be used in headless training and inference environments.
 """
 
 from __future__ import annotations
 
+import math
 import os
-from typing import Tuple
+from typing import Iterable, Sequence
 
 import numpy as np
+import pandas as pd
 
 import matplotlib
 
@@ -34,19 +35,7 @@ def plot_truth_vs_prediction(
     xlabel: str = "Ground Truth",
     ylabel: str = "Prediction",
 ) -> float:
-    """Plot scatter of predictions vs ground-truth and annotate R².
-
-    Args:
-        ground_truth: array-like of reference values.
-        predictions: array-like of predicted values.
-        out_path: destination path for the PNG image.
-        title: optional plot title.
-        xlabel: label for x-axis.
-        ylabel: label for y-axis.
-
-    Returns:
-        The computed coefficient of determination (R²).
-    """
+    """Plot scatter of predictions vs ground-truth and annotate R²."""
     gt_flat = np.asarray(ground_truth, dtype=np.float64).reshape(-1)
     pred_flat = np.asarray(predictions, dtype=np.float64).reshape(-1)
 
@@ -93,4 +82,92 @@ def plot_truth_vs_prediction(
     return float(r2)
 
 
-__all__ = ["plot_truth_vs_prediction", "ensure_directory"]
+def plot_time_series_overlay(
+    actual_df: pd.DataFrame,
+    predicted_df: pd.DataFrame,
+    target_cols: Sequence[str],
+    out_path: str,
+    time_column: str | None = "time",
+    highlight_seq_len: int | None = None,
+) -> None:
+    """Plot time-series overlays of ground-truth and predicted values."""
+    ensure_directory(os.path.dirname(out_path) or ".")
+
+    if time_column and time_column in actual_df.columns:
+        time_values = actual_df[time_column].to_numpy()
+    else:
+        time_values = np.arange(len(actual_df))
+
+    n_targets = len(target_cols)
+    n_cols = 2 if n_targets > 1 else 1
+    n_rows = math.ceil(n_targets / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 3 * n_rows), sharex=True)
+    if n_rows * n_cols == 1:
+        axes = np.array([axes])  # type: ignore
+    axes = axes.flatten()
+
+    for idx, col in enumerate(target_cols):
+        ax = axes[idx]
+        pred_col = f"pred_{col}"
+        actual_series = actual_df[col].to_numpy()
+        pred_series = predicted_df[pred_col].to_numpy()
+        ax.plot(time_values, actual_series, label="Ground Truth", linewidth=1.2)
+        ax.plot(time_values, pred_series, label="Prediction", linewidth=1.2, linestyle="--")
+        ax.set_title(col)
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Temperature")
+        ax.grid(True, linestyle="--", alpha=0.4)
+        if highlight_seq_len and highlight_seq_len > 0:
+            ax.axvspan(time_values[0], time_values[min(len(time_values) - 1, highlight_seq_len - 1)],
+                       color="#dddddd", alpha=0.2, label="Warm-up")
+
+    for idx in range(n_targets, len(axes)):
+        axes[idx].set_visible(False)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if len(axes) > 0 and handles:
+        fig.legend(handles, labels, loc="upper center", ncol=2)
+
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
+def plot_metric_summary(metrics: Iterable[dict], out_path: str) -> None:
+    """Create a summary bar chart for MAE and RMSE across files."""
+    metrics_list = list(metrics)
+    if not metrics_list:
+        return
+
+    df = pd.DataFrame(metrics_list)
+    ensure_directory(os.path.dirname(out_path) or ".")
+
+    df_sorted_mae = df.sort_values("mae", ascending=False)
+    df_sorted_rmse = df.sort_values("rmse", ascending=False)
+
+    height = max(4, 0.4 * len(df))
+    fig, axes = plt.subplots(1, 2, figsize=(12, height), sharey=False)
+
+    axes[0].barh(df_sorted_mae["file"], df_sorted_mae["mae"], color="#1f77b4")
+    axes[0].set_title("MAE by File")
+    axes[0].set_xlabel("MAE")
+    axes[0].invert_yaxis()
+    axes[0].grid(True, linestyle="--", alpha=0.3)
+
+    axes[1].barh(df_sorted_rmse["file"], df_sorted_rmse["rmse"], color="#ff7f0e")
+    axes[1].set_title("RMSE by File")
+    axes[1].set_xlabel("RMSE")
+    axes[1].invert_yaxis()
+    axes[1].grid(True, linestyle="--", alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
+__all__ = [
+    "ensure_directory",
+    "plot_truth_vs_prediction",
+    "plot_time_series_overlay",
+    "plot_metric_summary",
+]

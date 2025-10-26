@@ -20,14 +20,35 @@ import json
 import os
 from typing import Dict, List
 
-import yaml
-import numpy as np
-import pandas as pd
-import torch
+try:
+    import numpy as np
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    raise SystemExit(
+        "NumPy が見つかりません。仮想環境を有効化し、`uv pip install -r requirements.txt` を実行してください。"
+    ) from exc
+
+try:
+    import pandas as pd
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    raise SystemExit(
+        "pandas が見つかりません。仮想環境を有効化し、`uv pip install -r requirements.txt` を実行してください。"
+    ) from exc
+
+try:
+    import torch
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    raise SystemExit(
+        "PyTorch が見つかりません。仮想環境を有効化し、`uv pip install -r requirements.txt` を実行してください。"
+    ) from exc
 
 from .data_loader import read_csv_files, NormalisationStats
 from .models import build_model
-from .visualization import plot_truth_vs_prediction
+from .visualization import (
+    plot_metric_summary,
+    plot_time_series_overlay,
+    plot_truth_vs_prediction,
+)
+from .config_loader import load_config
 
 
 def load_normalisation_stats(path: str) -> NormalisationStats:
@@ -120,18 +141,33 @@ def predict_file(df: pd.DataFrame, model: torch.nn.Module,
 
 
 def main(config_path: str) -> None:
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    config = load_config(config_path)
 
     test_dir = config["data"]["dataset_dir"]
     input_cols = config["data"]["input_columns"]
     target_cols = config["data"]["target_columns"]
     seq_len = config["data"].get("sequence_length", 1)
     model_dir = config["model"]["model_dir"]
-    model_type = config["model"]["type"]
-    hidden_dim = config["model"].get("hidden_dim", 64)
-    num_layers = config["model"].get("num_layers", 2)
-    dropout = config["model"].get("dropout", 0.0)
+    config_used_path = os.path.join(model_dir, "config_used.yaml")
+    resolved_model_cfg = dict(config["model"])
+    if os.path.exists(config_used_path):
+        try:
+            saved_cfg = load_config(config_used_path)
+            saved_model_cfg = saved_cfg.get("model", {})
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"Warning: failed to read saved model config ({exc}); using config_pred settings.")
+            saved_model_cfg = {}
+        for key, value in saved_model_cfg.items():
+            if key not in resolved_model_cfg:
+                resolved_model_cfg[key] = value
+        if "type" in saved_model_cfg and resolved_model_cfg.get("type") != saved_model_cfg["type"]:
+            print(f"Info: overriding model type '{resolved_model_cfg.get('type')}' with "
+                  f"saved type '{saved_model_cfg['type']}' from {config_used_path}.")
+            resolved_model_cfg["type"] = saved_model_cfg["type"]
+    model_type = resolved_model_cfg["type"]
+    hidden_dim = resolved_model_cfg.get("hidden_dim", 64)
+    num_layers = resolved_model_cfg.get("num_layers", 2)
+    dropout = resolved_model_cfg.get("dropout", 0.0)
     # output directory
     out_dir = config["output"].get("prediction_dir", "predictions")
     os.makedirs(out_dir, exist_ok=True)
@@ -146,12 +182,14 @@ def main(config_path: str) -> None:
     # instantiate model and load weights
     input_dim = len(input_cols)
     output_dim = len(target_cols)
-    model_cfg = config["model"]
+    model_cfg = resolved_model_cfg
     model = build_model(model_cfg, input_dim=input_dim, output_dim=output_dim, seq_len=seq_len)
     model_path = os.path.join(model_dir, "best_model.pth")
     state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
+
+    metrics_records: List[Dict[str, float]] = []
 
     # read CSV files
     datasets = read_csv_files(test_dir)
@@ -180,6 +218,28 @@ def main(config_path: str) -> None:
                 ylabel="Predicted Temperature",
             )
             print(f"Saved scatter plot to {scatter_path} (R^2={r2:.4f})")
+            overlay_path = os.path.join(out_dir, f"timeseries_{os.path.splitext(filename)[0]}.png")
+            plot_time_series_overlay(
+                actual_df=df.reset_index(drop=True),
+                predicted_df=out_df,
+                target_cols=target_cols,
+                out_path=overlay_path,
+                highlight_seq_len=seq_len,
+            )
+            metrics_records.append({
+                "file": filename,
+                "mae": float(mae),
+                "rmse": float(rmse),
+                "r2": float(r2),
+            })
+
+    if metrics_records:
+        metrics_df = pd.DataFrame(metrics_records)
+        metrics_csv_path = os.path.join(out_dir, "prediction_metrics.csv")
+        metrics_df.to_csv(metrics_csv_path, index=False)
+        summary_plot_path = os.path.join(out_dir, "prediction_metrics.png")
+        plot_metric_summary(metrics_records, summary_plot_path)
+        print(f"Saved prediction metrics to {metrics_csv_path} and {summary_plot_path}")
 
 
 if __name__ == "__main__":

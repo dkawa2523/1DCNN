@@ -22,7 +22,6 @@ import json
 import os
 from typing import Dict, List, Tuple
 
-import yaml
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Subset
@@ -38,6 +37,7 @@ from .data_loader import (prepare_datasets, prepare_full_dataset,
                           NormalisationStats, read_csv_files)
 from .models import build_model
 from .predict import predict_file
+from .config_loader import load_config, dump_config
 from .visualization import plot_truth_vs_prediction, ensure_directory
 
 
@@ -470,8 +470,7 @@ def run_standard_training(config: Dict,
             with open(stats_path, "w") as sf:
                 json.dump({"mean": norm_stats.mean, "std": norm_stats.std}, sf, indent=2)
             cfg_out_path = os.path.join(output_dir, "config_used.yaml")
-            with open(cfg_out_path, "w") as cf:
-                yaml.safe_dump(config, cf)
+            dump_config(config, cfg_out_path)
         else:
             patience_counter += 1
             if patience_counter >= patience:
@@ -598,8 +597,7 @@ def evaluate_on_test(config: dict,
 
 def main(config_path: str) -> None:
     # load configuration
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    config = load_config(config_path)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")

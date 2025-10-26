@@ -9,6 +9,8 @@ forward() that takes a batch of sequences and produces a batch of
 temperature predictions.
 """
 
+import math
+
 import torch
 from torch import nn
 
@@ -66,11 +68,13 @@ class CNN1DModel(nn.Module):
         in_channels = input_dim
         current_seq_len = seq_len
         for nf, ks in zip(num_filters, kernel_sizes):
-            conv_layers.append(nn.Conv1d(in_channels, nf, kernel_size=ks))
+            padding = ks // 2
+            conv_layers.append(nn.Conv1d(in_channels, nf, kernel_size=ks, padding=padding))
             conv_layers.append(nn.ReLU())
-            conv_layers.append(nn.MaxPool1d(kernel_size=2))
+            conv_layers.append(nn.MaxPool1d(kernel_size=2, ceil_mode=True))
             in_channels = nf
-            current_seq_len = (current_seq_len - ks + 1) // 2  # approximate output length after conv + pool
+            current_seq_len = current_seq_len + 2 * padding - ks + 1
+            current_seq_len = max(1, math.ceil(current_seq_len / 2))
         self.conv = nn.Sequential(*conv_layers)
         # compute flattened dimension
         self.flatten_dim = in_channels * max(1, current_seq_len)
