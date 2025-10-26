@@ -1,0 +1,34 @@
+
+data:
+  dataset_dir: "data/test"
+  # Input columns must match those used during training
+  input_columns:
+    - brine
+    - heater
+    - plasma
+    - initial_temp
+    - temp_p0
+    - temp_p1
+    - temp_p2
+    - temp_p3
+    - temp_p4
+  target_columns:
+    - temp_p0
+    - temp_p1
+    - temp_p2
+    - temp_p3
+    - temp_p4
+  sequence_length: 5
+
+model:
+  # Must match the type used during training
+  type: lstm
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.1
+  # Directory where the trained model and normalisation statistics are stored
+  model_dir: "models"
+
+output:
+  # Directory to write prediction CSV files
+  prediction_dir: "predictions"

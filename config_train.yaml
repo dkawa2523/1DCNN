@@ -1,0 +1,63 @@
+data:
+  dataset_dir: "data/train"
+  test_dataset_dir: "data/test"
+  # Columns used as model inputs.  For the new dataset format
+  # we include constant features extracted from file name (brine, heater, plasma, initial_temp)
+  # and previous temperature values.  The time column is not included by default.
+  input_columns:
+    - brine
+    - heater
+    - plasma
+    - initial_temp
+    - temp_p0
+    - temp_p1
+    - temp_p2
+    - temp_p3
+    - temp_p4
+  # Columns to predict (temperatures at next time step).
+  target_columns:
+    - temp_p0
+    - temp_p1
+    - temp_p2
+    - temp_p3
+    - temp_p4
+  # Length of the input sequence (number of past time steps) used for prediction.
+  sequence_length: 5
+  # Step size for sliding window.  Use 1 to include every time step.
+  step_size: 1
+  # Ratio of the dataset to use for validation during training.
+  validation_ratio: 0.2
+
+model:
+  # Choose one of: mlp, cnn1d, lstm, xlstm
+  type: xlstm
+  # Hidden size for LSTM/XLSTM; not used for MLP/CNN1D
+  hidden_dim: 64
+  # Number of recurrent layers
+  num_layers: 2
+  # Dropout applied between layers (LSTM and linear layers)
+  dropout: 0.1
+  # Hidden layer sizes for MLP (if type=mlp)
+  hidden_dims: [128, 64]
+  # Convolution filters and kernel sizes for CNN1D (if type=cnn1d)
+  num_filters: [32, 64]
+  kernel_sizes: [3, 3]
+  fc_dims: [64]
+  # Optimisation parameters
+  learning_rate: 0.001
+  weight_decay: 0.0
+  batch_size: 32
+  num_epochs: 500
+  early_stopping_patience: 5
+
+training:
+  cross_validation:
+    num_folds: 5
+    shuffle: true
+    random_seed: 42
+
+output:
+  # Directory where the trained model and normalisation statistics will be saved.
+  model_dir: "models"
+  # Directory where training logs will be written (optional)
+  logs_dir: "logs"
