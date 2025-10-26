@@ -30,7 +30,7 @@ data:
 
 model:
   # Choose one of: mlp, cnn1d, lstm, xlstm
-  type: xlstm
+  type: cnn1d
   # Hidden size for LSTM/XLSTM; not used for MLP/CNN1D
   hidden_dim: 64
   # Number of recurrent layers
@@ -60,4 +60,4 @@ output:
   # Directory where the trained model and normalisation statistics will be saved.
   model_dir: "models"
   # Directory where training logs will be written (optional)
-  logs_dir: "logs"
+  logs_dir: "logscnn"
